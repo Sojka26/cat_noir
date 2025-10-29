@@ -1,27 +1,96 @@
 /* Laser Cat with Sprites v2 */
 "use strict";
 
-const W = innerWidth, H = innerHeight;
+// Game initialization
 const canvas = document.getElementById("game");
-const g = canvas.getContext("2d");
-canvas.width = W; canvas.height = H;
-g.imageSmoothingEnabled = false;
+const g = canvas.getContext("2d", { alpha: false });
+const loadingElement = document.getElementById("loading");
+const gameOverElement = document.getElementById("game-over");
+
+// Set initial canvas size
+let W = innerWidth, H = innerHeight;
+function resizeCanvas() {
+    W = innerWidth;
+    H = innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    g.imageSmoothingEnabled = false;
+    g.webkitImageSmoothingEnabled = false;
+    g.mozImageSmoothingEnabled = false;
+    g.msImageSmoothingEnabled = false;
+}
+resizeCanvas();
+
+window.onresize = () => {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  g.imageSmoothingEnabled = false;
+  g.webkitImageSmoothingEnabled = false;
+  g.mozImageSmoothingEnabled = false;
+  g.msImageSmoothingEnabled = false;
+};
 
 const SPR = {};
 const names = ["cat","dog","nail","hand","bowl"];
 let loaded = 0;
-for (const n of names){
-  const img = new Image();
-  img.onload = ()=>{ loaded++; };
-  img.src = "assets/"+n+".png";
-  SPR[n]=img;
+
+function loadImage(name) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // Create an offscreen canvas for high-quality scaling
+      const offscreen = document.createElement('canvas');
+      const ctx = offscreen.getContext('2d', { alpha: true });
+      
+      // Set canvas to image dimensions
+      offscreen.width = img.width;
+      offscreen.height = img.height;
+      
+      // Configure for best pixel art rendering
+      ctx.imageSmoothingEnabled = false;
+      ctx.webkitImageSmoothingEnabled = false;
+      ctx.mozImageSmoothingEnabled = false;
+      ctx.msImageSmoothingEnabled = false;
+      
+      // Draw the image to offscreen canvas
+      ctx.drawImage(img, 0, 0);
+      
+      // Store the optimized canvas
+      SPR[name] = { 
+        img: img,
+        canvas: offscreen,
+        width: img.width,
+        height: img.height
+      };
+      loaded++;
+      resolve();
+    };
+    img.onerror = (err) => {
+      console.error('Error loading sprite:', name, err);
+      reject(err);
+    };
+    // Disable browser's image smoothing
+    img.style.imageRendering = 'pixelated';
+    img.src = "assets/"+name+".png";
+  });
 }
 
+// Load all images in parallel
+Promise.all(names.map(loadImage)).catch(err => {
+  console.error('Failed to load some sprites:', err);
+});
+
+// Event handlers
 const keys = {}; let mouseDown = false;
-onkeydown = e => keys[e.key] = true;
-onkeyup   = e => keys[e.key] = false;
-onmousedown = () => mouseDown = true;
-onmouseup   = () => mouseDown = false;
+window.onkeydown = e => keys[e.key] = true;
+window.onkeyup   = e => keys[e.key] = false;
+window.onmousedown = () => mouseDown = true;
+window.onmouseup   = () => mouseDown = false;
+window.onresize = () => {
+    resizeCanvas();
+    // Adjust cat position if needed
+    cat.y = Math.max(34, Math.min(H-34, cat.y));
+};
 
 let t = 0, gameOver = false, score = 0, best = 0;
 const cat = { x:96, y:H/2, vy:0, cooldown:0, eye:10, shield:0 };
@@ -51,24 +120,36 @@ function fire(){
 
 reset();
 
-function drawCentered(img,x,y,w,h){
-  g.drawImage(img, Math.floor(x-w/2), Math.floor(y-h/2), Math.floor(w), Math.floor(h));
+function drawCentered(sprite,x,y,w,h){
+  const scale = 2;  // Increased scale for better visibility
+  x = Math.floor(x - (w * scale) / 2);
+  y = Math.floor(y - (h * scale) / 2);
+  w = Math.floor(w * scale);
+  h = Math.floor(h * scale);
+  
+  // Use the optimized canvas if available
+  if (sprite.canvas) {
+    g.drawImage(sprite.canvas, x, y, w, h);
+  } else {
+    g.drawImage(sprite.img || sprite, x, y, w, h);
+  }
 }
 
 function loop(){
   requestAnimationFrame(loop);
   if(loaded < names.length){
-    g.fillStyle="#000"; g.fillRect(0,0,W,H);
-    g.fillStyle="#fff"; g.font="16px system-ui,Arial"; g.textAlign="center";
-    g.fillText("Načítám sprity… ("+loaded+"/"+names.length+")", W/2, H/2);
+    loadingElement.textContent = `Loading... ${loaded}/${names.length}`;
     return;
+  } else {
+    loadingElement.classList.add('hidden');
   }
+  
   if(gameOver){
-    g.fillStyle="#0008"; g.fillRect(0,0,W,H);
-    g.fillStyle="#fff"; g.textAlign="center";
-    g.font="bold 48px system-ui,Arial"; g.fillText("GAME OVER", W/2, H/2-10);
-    g.font="24px system-ui,Arial"; g.fillText("Press [R] to restart", W/2, H/2+30);
-    if(keys.r || keys.R) reset();
+    gameOverElement.classList.remove('hidden');
+    if(keys.r || keys.R) {
+      reset();
+      gameOverElement.classList.add('hidden');
+    }
     return;
   }
 
@@ -92,14 +173,14 @@ function loop(){
   g.fillStyle="#111"; g.fillRect(0,0,140,H);
   g.fillStyle="#222"; for(let i=0;i<H;i+=24) g.fillRect(0,i,140,12);
   g.fillStyle="#fff"; g.font="14px system-ui,Arial"; g.textAlign="left";
-  g.fillText("Hlaď mě: klik/E",8,18);
+  g.fillText("Pet me: click/E",8,18);
   // Hand moves left-right when petting
   let handX = 12;
   if(mouseDown || keys.e || keys.E){
     handX = 12 + Math.sin(t*0.2) * 20;
   }
-  if(SPR.hand.width) g.drawImage(SPR.hand, handX, 28, 48, 64);
-  if(SPR.bowl.width) g.drawImage(SPR.bowl, 12, H-84, 96, 64);
+  if(SPR.hand && SPR.hand.width) drawCentered(SPR.hand, handX + 24, 60, 48, 64);
+  if(SPR.bowl && SPR.bowl.width) drawCentered(SPR.bowl, 60, H-52, 96, 64);
 
   // Cat
   drawCentered(SPR.cat, cat.x, cat.y, 64, 64);
@@ -158,8 +239,8 @@ function loop(){
   nails.forEach(n=>{
     g.save();
     g.translate(n.x, n.y);
-    g.rotate(0); // facing right
-    g.drawImage(SPR.nail, -10, -10, 20, 20);
+    g.rotate(Math.atan2(n.dy, n.dx)); // rotate based on movement direction
+    drawCentered(SPR.nail, 0, 0, 20, 20);
     g.restore();
   });
 
@@ -167,7 +248,7 @@ function loop(){
   g.fillStyle="#fff"; g.font="16px system-ui,Arial"; g.textAlign="left";
   g.fillText("Score: "+score,152,22); g.fillText("Best: "+best,152,42);
   g.globalAlpha=.6;
-  g.fillText("↑/↓ pohyb • Space střelba • Klik/E: hladit (štít)",152,H-16);
+  g.fillText("↑/↓ move • Space shoot • Click/E: pet (shield)",152,H-16);
   g.globalAlpha=1;
 }
 
