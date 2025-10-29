@@ -58,3 +58,4 @@ Zkopírovat kód
 Tento projekt je vytvořen pro účely učení a zábavy. Můžeš ho upravit, přetvořit nebo použít jako základ pro vlastní pixelartové hry.
 
 ---
+## Hra je stále ve vývoji
